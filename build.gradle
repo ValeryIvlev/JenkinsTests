@@ -1,0 +1,89 @@
+plugins {
+    id 'java'
+    id 'io.qameta.allure' version '2.11.2'
+    id 'io.freefair.lombok' version '8.6'
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+compileJava.options.encoding = 'UTF-8'
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params'
+    testImplementation 'io.rest-assured:rest-assured:5.4.0'
+    implementation 'io.qameta.allure:allure-rest-assured:2.24.0'
+    testImplementation 'io.qameta.allure:allure-junit5:2.24.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
+    implementation 'com.codeborne:selenide:6.19.1'
+    implementation 'io.qameta.allure:allure-selenide:2.24.0'
+
+    testImplementation 'commons-io:commons-io:2.15.1'
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+
+tasks.register("TagsTask", Test.class) {
+    maxParallelForks = System.getProperty("maxForks")
+            ? Integer.parseInt(System.getProperty("maxForks"))
+            : Math.max((int)(Runtime.runtime.availableProcessors() / 2), 1)
+
+    useJUnitPlatform {
+        def tagsRaw = System.getProperty("customTags")
+
+        excludeTags "serial"
+
+        if (tagsRaw) {
+            def tags = tagsRaw.split(",")
+            includeTags(*tags)
+            println "Запуск многопоточно (${maxParallelForks} процессов) по тегам: ${tags.join(', ')}"
+        } else {
+            println "Запуск всех тестов многопоточно (${maxParallelForks} процессов)"
+        }
+    }
+
+    finalizedBy "SerialTagsTask"
+}
+
+tasks.register("SerialTagsTask", Test.class) {
+    maxParallelForks = 1
+
+    useJUnitPlatform {
+        def tagsRaw = System.getProperty("customTags")
+
+        if (tagsRaw) {
+            def tags = tagsRaw.split(",")
+
+            def tagExpression = "serial & (${tags.join(' | ')})"
+            includeTags tagExpression
+
+            println "Запуск serial тестов однопоточно с фильтром: ${tagExpression}"
+        } else {
+            includeTags "serial"
+            println "Запуск всех serial тестов однопоточно"
+        }
+    }
+
+    onlyIf {
+        gradle.taskGraph.hasTask(":TagsTask")
+    }
+}
